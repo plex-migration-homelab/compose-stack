@@ -107,6 +107,8 @@ Self-hosted cloud services:
 
 ## 📚 Documentation
 
+📋 **[DOCS_INDEX.md](DOCS_INDEX.md)** - Complete documentation index with search guide
+
 ### Core Documentation
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide with systemd integration
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design decisions
