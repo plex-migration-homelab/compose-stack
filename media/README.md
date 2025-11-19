@@ -2,7 +2,9 @@
 
 Docker Compose configuration for media management and streaming services.
 
-## Services
+> **Note**: This stack currently contains example/placeholder configuration. Add the services you need to `compose.yml` based on your requirements.
+
+## Available Services
 
 This stack is designed to host media management services such as:
 - **Plex/Jellyfin** - Media server
@@ -37,6 +39,36 @@ Application data is stored in `/var/lib/containers/appdata/` with separate direc
 - `/var/lib/containers/appdata/radarr/` - Radarr configuration
 - `/var/lib/containers/appdata/sonarr/` - Sonarr configuration
 - etc.
+
+## Adding Services
+
+To add services to this stack:
+
+1. Edit `compose.yml` and add service definitions
+2. Update `.env.example` with any new environment variables
+3. Copy `.env.example` to `.env` and configure
+4. Deploy with `docker compose up -d`
+
+### Example Service Addition
+
+Add Plex to `compose.yml`:
+
+```yaml
+services:
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - VERSION=docker
+    volumes:
+      - /var/lib/containers/appdata/plex:/config
+      - ${MEDIA_PATH}:/media
+    restart: unless-stopped
+```
 
 ## Deployment
 
