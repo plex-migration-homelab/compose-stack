@@ -107,11 +107,20 @@ Self-hosted cloud services:
 
 ## 📚 Documentation
 
+### Core Documentation
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide with systemd integration
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design decisions
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Fast reference for common commands
+
+### Guides & Help
 - **[FAQ.md](FAQ.md)** - Frequently asked questions and troubleshooting
+- **[SERVICE_TEMPLATE.md](SERVICE_TEMPLATE.md)** - Template for adding new services
+
+### Project Information
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Guidelines for contributing
+- **[SECURITY.md](SECURITY.md)** - Security policies and best practices
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and updates
+- **[LICENSE](LICENSE)** - MIT License
 
 ## 🔧 Prerequisites
 
