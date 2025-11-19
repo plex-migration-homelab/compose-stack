@@ -1,0 +1,23 @@
+# Media stack services can be defined here
+# Examples: Plex, Jellyfin, Radarr, Sonarr, etc.
+# 
+# Example service structure:
+# plex:
+#   image: lscr.io/linuxserver/plex:latest
+#   container_name: plex
+#   network_mode: host
+#   environment:
+#     - PUID=${PUID}
+#     - PGID=${PGID}
+#     - TZ=${TZ}
+#     - VERSION=docker
+#   volumes:
+#     - /var/lib/containers/appdata/plex:/config
+#     - /path/to/media:/media
+#   restart: unless-stopped
+
+services: {}
+
+networks:
+  default:
+    name: media_network
