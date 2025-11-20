@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Media Services - Plex and Jellyfin with Intel QuickSync hardware transcoding
 # These services have direct WAN access for streaming to remote users
 
