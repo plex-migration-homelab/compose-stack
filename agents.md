@@ -1,52 +1,80 @@
-# AI Agent Guidelines for Docker Compose Homelab Stack
+# AI Agent Instructions: Docker Compose Homelab Stack
 
-This document provides guidelines for Claude AI when working with this Docker Compose homelab stack.
+You are an AI assistant working with a Fedora CoreOS Docker Compose homelab stack. Follow these instructions precisely.
 
-## ⚠️ CRITICAL: SELinux Volume Mount Requirements
+---
 
-**MANDATORY**: This stack runs on **Fedora CoreOS** with **SELinux enabled in enforcing mode**.
+## CRITICAL SYSTEM CONTEXT
 
-### All Volume Mounts MUST Follow SELinux Rules
+This system runs **Fedora CoreOS** with **SELinux in enforcing mode**. Every decision you make must account for:
 
-#### Rule 1: Bind Mounts Need `:z` Tag
+1. **SELinux is MANDATORY** - Containers cannot write to bind mounts without proper SELinux labels
+2. **System is remotely hosted** - Boot failures require physical intervention by Marcus
+3. **Immutable OS** - Cannot install packages traditionally (uses rpm-ostree)
+4. **Docker runtime** - NOT Podman (despite CoreOS convention)
+5. **Systemd-managed services** - Stacks controlled by systemd, not manual commands
 
-When mounting host directories into containers, **always** add the `:z` SELinux context flag:
+**Hardware:**
+- NAB9 Mini PC: Intel i5 12th gen (QuickSync), 32GB RAM, local appdata storage
+- Unraid Server: ZFS/NFS media storage, hosts Immich-ML with NVIDIA P2000 GPU
+- Digital Ocean VPS: NginxProxyManager, WireGuard tunnel to mini PC
+
+**Network:**
+- WireGuard: VPS ↔ Mini PC (public service access)
+- Tailscale: Internal administrative access
+- NFS: Unraid → Mini PC (`/mnt/nas-media`)
+
+---
+
+## MANDATORY SELINUX RULES
+
+When you write or modify ANY volume mount in a Docker Compose file, you MUST follow these rules:
+
+### Rule 1: Writable Bind Mounts REQUIRE `:z`
+
+**WHEN** you mount a host directory that containers need to **write** to:
+**THEN** you MUST add the `:z` SELinux context tag
 
 ```yaml
-# ✅ CORRECT
+# ✅ CORRECT - Container can write
 volumes:
-  - ${APPDATA_PATH}/service:/config:z
-  - /mnt/storage:/data:z
+  - ${APPDATA_PATH}/plex:/config:z
+  - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z
   - ${UPLOAD_LOCATION}:/uploads:z
 
-# ❌ INCORRECT - Will fail with "permission denied" on Fedora CoreOS
+# ❌ WRONG - Will fail with "permission denied"
 volumes:
-  - ${APPDATA_PATH}/service:/config
-  - /mnt/storage:/data
+  - ${APPDATA_PATH}/plex:/config
+  - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
 ```
 
-**Why?** The `:z` flag tells Docker to relabel the host directory with the appropriate SELinux context (`svirt_sandbox_file_t`), allowing containers to read/write files.
+**WHY:** The `:z` flag tells Docker to relabel the directory with `svirt_sandbox_file_t`, allowing container write access under SELinux.
 
-#### Rule 2: Read-Only System Mounts Use `:ro` (Without `:z`)
+### Rule 2: Read-Only System Files Use ONLY `:ro`
 
-System files and the Docker socket should use `:ro` (read-only) without `:z`:
+**WHEN** you mount system files or read-only resources:
+**THEN** you MUST use `:ro` WITHOUT `:z`
 
 ```yaml
-# ✅ CORRECT
+# ✅ CORRECT - Read-only system resources
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock:ro
   - /etc/localtime:/etc/localtime:ro
-  - /mnt/nas-media:/media:ro  # Read-only NFS mount
+  - /mnt/nas-media:/media:ro
+
+# ❌ WRONG - Never add :z to these
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock:z
+  - /etc/localtime:/etc/localtime:z
 ```
 
-These system files already have correct SELinux labels and should not be relabeled.
+### Rule 3: Named Volumes Need NO Tags
 
-#### Rule 3: Named Volumes Don't Need Tags
-
-Docker-managed named volumes don't need SELinux tags:
+**WHEN** you use Docker-managed named volumes:
+**THEN** you MUST NOT add any SELinux tags
 
 ```yaml
-# ✅ CORRECT
+# ✅ CORRECT - Named volumes
 volumes:
   - postgres_data:/var/lib/postgresql/data
   - model-cache:/cache
@@ -54,240 +82,126 @@ volumes:
 volumes:
   postgres_data:
     name: service_postgres_data
-  model-cache:
-    name: immich_model_cache
 ```
 
-Named volumes are automatically labeled correctly by Docker.
+### SELinux Quick Decision Table
 
-### SELinux Tag Quick Reference
+| What You're Mounting | Tag Required | Example |
+|---------------------|-------------|---------|
+| App config directory | `:z` | `${APPDATA_PATH}/service:/config:z` |
+| Database directory | `:z` | `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z` |
+| Upload directory | `:z` | `${UPLOAD_LOCATION}:/uploads:z` |
+| Cache directory (writable) | `:z` | `${APPDATA_PATH}/service/cache:/cache:z` |
+| Docker socket | `:ro` ONLY | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| System time files | `:ro` ONLY | `/etc/localtime:/etc/localtime:ro` |
+| NFS read-only media | `:ro` ONLY | `/mnt/nas-media:/media:ro` |
+| Named Docker volume | NONE | `volume_name:/path` |
 
-| Mount Type | SELinux Tag | Example |
-|------------|-------------|---------|
-| Application data directory | `:z` | `${APPDATA_PATH}/plex:/config:z` |
-| Database data directory | `:z` | `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z` |
-| Upload/storage directory | `:z` | `${UPLOAD_PATH}:/uploads:z` |
-| Transcode/cache directory | `:z` | `${APPDATA_PATH}/plex/transcode:/transcode:z` |
-| Docker socket | `:ro` only | `/var/run/docker.sock:/var/run/docker.sock:ro` |
-| System time files | `:ro` only | `/etc/localtime:/etc/localtime:ro` |
-| Read-only NFS media | `:ro` only | `/mnt/nas-media:/media:ro` |
-| Named Docker volumes | None | `volume_name:/path` |
+---
 
-## System Architecture
-
-### Hardware Environment
-- **NAB9 Mini PC** (Primary host)
-  - CPU: 12th gen Intel i5 with QuickSync
-  - RAM: 32GB
-  - OS: **Fedora CoreOS** (immutable, rpm-ostree based, **SELinux enforcing**)
-  - Runtime: Docker (not Podman)
-  - Storage: Local appdata + NFS mounts
-
-- **Unraid File Server**
-  - ZFS array with NFS exports
-  - Hosts Immich-ML service (NVIDIA P2000 GPU)
-  - Media storage: `/mnt/nas/media`
-
-- **Digital Ocean VPS**
-  - Runs NginxProxyManager
-  - WireGuard tunnel to mini PC
-  - Public-facing service endpoint
-
-### Network Topology
-- **WireGuard Tunnel**: VPS ↔ Mini PC for secure public access
-- **Tailscale**: Internal network access across all devices
-- **NFS**: File server → Mini PC for media library
-
-### Critical Constraint
-**Remote hosting**: Mini PC is physically remote. Boot failures or systemd issues require Marcus intervention. Stability is paramount.
-
-## Repository Structure
-
-```
-/srv/containers/
-├── management/
-│   └── docker-compose.yml       # Note: NOT compose.yml
-├── media/
-│   ├── compose.yml
-│   └── docker-compose.yml       # Symlink to compose.yml
-├── web/
-│   ├── compose.yml
-│   └── docker-compose.yml       # Symlink to compose.yml
-├── cloud/
-│   ├── nextcloud/               # Nextcloud AIO (all-in-one)
-│   ├── immich/                  # Immich main services (mini PC)
-│   └── immich-ml/               # Documentation only (service on Unraid)
-├── DEPLOYMENT.md
-├── README.md
-├── claude.md                    # This file
-└── agents.md                    # Same content as this file
-```
-
-### File Naming Convention
-- **Management stack**: Uses single `docker-compose.yml` (historical)
-- **All other stacks**: `compose.yml` with symlink `docker-compose.yml → compose.yml`
-
-## Stack Descriptions with SELinux Examples
+## STACK-SPECIFIC INSTRUCTIONS
 
 ### Management Stack (`management/docker-compose.yml`)
 
-Infrastructure services for monitoring and container management.
+**File naming:** This stack uses `docker-compose.yml` (NOT `compose.yml`) - historical convention, do NOT change.
 
-**Services**:
-- **Portainer** (9000, 9443): Container management UI
-- **Watchtower**: Automatic container updates (label-based, runs at 4 AM)
-- **Tautulli** (8181): Plex monitoring and statistics
+**Services:** Portainer (9000, 9443), Watchtower (auto-updates), Tautulli (8181)
 
-**SELinux Volume Patterns**:
-```yaml
-# Portainer
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket (no :z)
-  - ${APPDATA_PATH}/portainer:/data:z              # Application data (needs :z)
-
-# Watchtower
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket only
-
-# Tautulli
-volumes:
-  - ${APPDATA_PATH}/tautulli:/config:z             # Configuration (needs :z)
-```
+**WHEN** modifying this stack:
+- Portainer and Watchtower MUST have Docker socket access: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- All appdata mounts MUST use `:z`: `${APPDATA_PATH}/portainer:/data:z`
+- Watchtower MUST have `WATCHTOWER_LABEL_ENABLE=true` environment variable
+- All services MUST include label: `com.centurylinklabs.watchtower.enable=true`
 
 ### Media Stack (`media/compose.yml`)
 
-Media streaming services with Intel QuickSync hardware transcoding.
+**Services:** Plex (32400), Jellyfin (8096)
 
-**Services**:
-- **Plex** (32400): Media server, host network mode
-- **Jellyfin** (8096): Alternative media server
+**WHEN** modifying this stack:
+- Plex MUST use `network_mode: host` (NEVER change to bridge - breaks discovery)
+- Jellyfin MUST have `LIBVA_DRIVER_NAME=iHD` environment variable (12th gen Intel QuickSync)
+- Both MUST have device access: `devices: [/dev/dri:/dev/dri]`
+- All appdata MUST use `:z`: `${APPDATA_PATH}/plex:/config:z`
+- NFS media MUST use `:ro` only: `/mnt/nas-media:/media:ro` (no `:z`)
+- Systemd service MUST include: `RequiresMountsFor=/mnt/nas-media`
 
-**SELinux Volume Patterns**:
-```yaml
-# Plex
-volumes:
-  - ${APPDATA_PATH}/plex:/config:z                # Configuration (needs :z)
-  - /mnt/nas-media:/media:ro                      # NFS read-only (no :z)
-  - ${APPDATA_PATH}/plex/transcode:/transcode:z   # Transcode cache (needs :z)
-
-# Jellyfin
-volumes:
-  - ${APPDATA_PATH}/jellyfin/config:/config:z     # Configuration (needs :z)
-  - ${APPDATA_PATH}/jellyfin/cache:/cache:z       # Cache (needs :z)
-  - ${APPDATA_PATH}/jellyfin/transcode:/transcode:z  # Transcode (needs :z)
-  - /mnt/nas-media:/media:ro                      # NFS read-only (no :z)
-```
-
-**Hardware Access**: `/dev/dri:/dev/dri` for QuickSync
-**Environment**: `LIBVA_DRIVER_NAME=iHD` for Jellyfin (12th gen Intel)
-**Network**: Plex uses host mode, Jellyfin on bridge network `media`
+**NEVER:**
+- Change Plex to bridge network
+- Remove `/dev/dri` device mount
+- Remove `LIBVA_DRIVER_NAME=iHD` from Jellyfin
 
 ### Web Stack (`web/compose.yml`)
 
-User-facing web applications proxied through VPS.
+**Services:** NginxProxyManager (80, 443, 81), Overseerr (5055), Wizarr (5690), Homepage (3000)
 
-**Services**:
-- **NginxProxyManager** (80, 443, 81): Reverse proxy and SSL
-- **Overseerr** (5055): Media request management
-- **Wizarr** (5690): User invitation system
-- **Homepage** (3000): Dashboard with Docker socket access
+**WHEN** modifying this stack:
+- All services MUST be on `web` bridge network
+- All appdata MUST use `:z`: `${APPDATA_PATH}/service:/config:z`
+- Homepage MUST have Docker socket: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Services are accessed via WireGuard tunnel from VPS
 
-**SELinux Volume Patterns**:
-```yaml
-# NginxProxyManager
-volumes:
-  - ${APPDATA_PATH}/nginxproxymanager:/config:z   # Configuration (needs :z)
+### Nextcloud AIO Stack (`cloud/nextcloud/compose.yml`)
 
-# Overseerr
-volumes:
-  - ${APPDATA_PATH}/overseerr:/config:z           # Configuration (needs :z)
+**Architecture:** Single mastercontainer (NOT multi-container stack)
 
-# Wizarr
-volumes:
-  - ${APPDATA_PATH}/wizarr:/data/database:z       # Database (needs :z)
+**WHEN** modifying this stack:
+- There is ONLY ONE container: `nextcloud-aio-mastercontainer`
+- Mastercontainer auto-creates sub-containers (`nextcloud-aio-*`) via Docker API
+- MUST have: `init: true`
+- MUST have Docker socket: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- MUST use named volume: `nextcloud_aio_mastercontainer:/mnt/docker-aio-config` (no tags)
+- Port 8080 is the AIO admin interface
 
-# Homepage
-volumes:
-  - ${APPDATA_PATH}/homepage:/app/config:z        # Configuration (needs :z)
-  - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket (no :z)
-```
+**NEVER:**
+- Add PostgreSQL, Redis, or Apache containers to the compose file (AIO creates these)
+- Modify `nextcloud-aio-*` sub-containers directly
+- Change the mastercontainer volume name
+- Remove Docker socket access
 
-**Network**: Bridge network `web`
-**Public Access**: Via WireGuard tunnel to VPS
+**IF** user asks to modify Nextcloud configuration:
+**THEN** direct them to use AIO web interface at `http://IP:8080`
 
-### Cloud Services: Nextcloud AIO (`cloud/nextcloud/compose.yml`)
+### Immich Stack (`cloud/immich/compose.yml`)
 
-**Architecture**: Nextcloud All-in-One (single mastercontainer)
-- **NOT** a multi-container compose stack
-- Mastercontainer auto-creates sub-containers via Docker API
-- Sub-containers: `nextcloud-aio-*` (PostgreSQL, Redis, Apache, Collabora, Talk, etc.)
-- Management via AIO web UI at port 8080
+**Architecture:** Split deployment - main services on mini PC, ML on Unraid
 
-**SELinux Volume Pattern**:
-```yaml
-services:
-  nextcloud-aio-mastercontainer:
-    image: nextcloud/all-in-one:latest
-    init: true  # Required for AIO
-    ports:
-      - "8080:8080"  # AIO admin interface
-    environment:
-      - APACHE_PORT=11000
-      - APACHE_IP_BINDING=0.0.0.0
-    volumes:
-      - nextcloud_aio_mastercontainer:/mnt/docker-aio-config  # Named volume (no tags)
-      - /var/run/docker.sock:/var/run/docker.sock:ro          # Docker socket (no :z)
+**WHEN** modifying this stack:
+- Server and microservices MUST have: `IMMICH_MACHINE_LEARNING_URL=http://UNRAID_IP:3003`
+- Database MUST use `tensorchord/pgvecto-rs:pg14-v0.2.0` image (NOT standard postgres)
+- All uploads MUST use `:z`: `${UPLOAD_LOCATION}:/usr/src/app/upload:z`
+- Database MUST use `:z`: `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z`
+- System time MUST use `:ro`: `/etc/localtime:/etc/localtime:ro`
 
-volumes:
-  nextcloud_aio_mastercontainer:
-    name: nextcloud_aio_mastercontainer
-```
+**NEVER:**
+- Add `immich-machine-learning` container to this compose file (runs on Unraid)
+- Use standard PostgreSQL image (must be pgvecto-rs)
+- Remove `IMMICH_MACHINE_LEARNING_URL` from server or microservices
 
-**Critical**:
-- Don't add PostgreSQL/Redis containers (AIO handles this)
-- Don't modify sub-containers directly (use AIO interface)
-- Named volume for mastercontainer (no `:z` needed)
+**IF** user asks about ML container:
+**THEN** inform them it runs on Unraid server (port 3003), not in this compose stack
 
-### Cloud Services: Immich Split Deployment
+### Immich-ML (`cloud/immich-ml/`)
 
-**Files**:
-- `cloud/immich/compose.yml` - Main services (mini PC)
-- `cloud/immich-ml/` - Documentation only (service runs on Unraid)
+**Architecture:** Documentation only - actual service runs on Unraid via Docker UI
 
-**Architecture**: Distributed deployment
-- **Mini PC**: Web UI, API, microservices, PostgreSQL, Redis
-- **Unraid**: ML container with NVIDIA P2000 GPU
+**WHEN** user asks about this directory:
+- Contains setup documentation, NOT a compose stack for the mini PC
+- Actual service deployed via Docker web UI on Unraid server
+- Requires NVIDIA P2000 GPU (only available on Unraid)
+- Must be accessible from mini PC on port 3003
 
-**SELinux Volume Patterns**:
-```yaml
-# Immich Server & Microservices
-volumes:
-  - ${UPLOAD_LOCATION}:/usr/src/app/upload:z   # Photo uploads (needs :z)
-  - /etc/localtime:/etc/localtime:ro            # System time (no :z)
+**NEVER:**
+- Deploy this compose file on the mini PC (no GPU available)
+- Suggest moving ML to mini PC (would be CPU-only and very slow)
 
-# PostgreSQL (pgvecto-rs with vector extensions)
-volumes:
-  - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z  # Database data (needs :z)
+---
 
-# Redis (cache only, no persistence needed)
-# No volumes required
-```
+## STANDARD COMPOSE PATTERNS
 
-**Critical Configuration**:
-```yaml
-environment:
-  - IMMICH_MACHINE_LEARNING_URL=http://UNRAID_IP:3003  # Points to Unraid ML service
-```
+### When Adding a New Service
 
-**Important**:
-- Never add ML container to mini PC compose (runs on Unraid)
-- Use `tensorchord/pgvecto-rs` image, not standard PostgreSQL
-- Both server and microservices need `IMMICH_MACHINE_LEARNING_URL`
-- Firewall on Unraid must allow mini PC access to port 3003
+**ALWAYS** include these elements:
 
-## Common Compose Patterns with SELinux
-
-### Standard Service Template
 ```yaml
 services:
   servicename:
@@ -303,15 +217,25 @@ services:
     ports:
       - "HOST:CONTAINER"
     volumes:
-      - ${APPDATA_PATH}/servicename:/config:z  # Writable bind mount needs :z
-      - /etc/localtime:/etc/localtime:ro       # Read-only system file
+      - ${APPDATA_PATH}/servicename:/config:z  # MUST have :z
+      - /etc/localtime:/etc/localtime:ro        # MUST have :ro
     networks:
       - stack_network
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 ```
 
-### Database Service Pattern
+**Checklist before committing:**
+- [ ] All writable bind mounts have `:z`
+- [ ] Read-only system files have `:ro` only
+- [ ] PUID, PGID, TZ environment variables included
+- [ ] Appropriate network assigned
+- [ ] Watchtower label included
+- [ ] Container name specified
+- [ ] `restart: unless-stopped` (not `always`)
+
+### When Adding a Database
+
 ```yaml
 services:
   database:
@@ -320,58 +244,253 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${DB_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}  # From .env
       - POSTGRES_DB=${DB_DATABASE_NAME:-servicedb}
     volumes:
-      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z  # Database needs :z
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z  # MUST have :z
     networks:
       - service_network
     # No external ports - internal access only
 ```
 
-## Environment Variables
+**NEVER:**
+- Hardcode database passwords (use `${DB_PASSWORD}` from `.env`)
+- Expose database ports externally unless absolutely required
+- Forget `:z` on data directory
 
-### Common Variables
-```bash
-PUID=1000                        # User ID for file ownership
-PGID=1000                        # Group ID for file ownership
-TZ=America/New_York              # Timezone
-APPDATA_PATH=/var/lib/containers/appdata  # Application data root
+---
+
+## DECISION TREES
+
+### When Container Fails with "Permission Denied"
+
+```
+1. Check container logs: docker logs <container_name>
+2. IF error mentions /config, /data, or any mounted path:
+   ├─ Check compose file volume mounts
+   ├─ IF bind mount is missing :z tag:
+   │  └─ ADD :z tag to the volume mount
+   ├─ ELSE check SELinux context: ls -Z ${APPDATA_PATH}/<service>
+   │  └─ IF context is not svirt_sandbox_file_t:
+   │     └─ ADD :z tag to volume mount
+   └─ ELSE check ownership: ls -la ${APPDATA_PATH}/<service>
+      └─ IF owned by wrong user:
+         └─ chown -R 1000:1000 ${APPDATA_PATH}/<service>
 ```
 
-### Stack-Specific Variables
+### When User Asks to Add a Service
 
-**Media**:
-```bash
-PLEX_CLAIM_TOKEN=claim-xxxxx     # Plex server claim token
-JELLYFIN_PUBLIC_URL=https://...  # Public Jellyfin URL
+```
+1. Determine appropriate stack:
+   ├─ Infrastructure/monitoring? → management/
+   ├─ Media streaming? → media/
+   ├─ Web application? → web/
+   └─ Cloud/storage? → cloud/
+
+2. Check for special requirements:
+   ├─ Needs GPU? → Can only run on Unraid (mini PC has no GPU)
+   ├─ Needs QuickSync? → media/ stack with /dev/dri device
+   ├─ Needs Docker socket? → Must use :ro, never :z
+   └─ Needs database? → Create in same stack
+
+3. Write compose configuration:
+   ├─ Use standard service template
+   ├─ Add :z to all writable bind mounts
+   ├─ Add :ro to system files
+   ├─ Include PUID/PGID/TZ
+   └─ Add to appropriate network
+
+4. Create supporting files:
+   ├─ Add variables to .env.example with comments
+   ├─ Document in stack's README.md
+   └─ Update systemd service if dependencies change
+
+5. Validate before committing:
+   └─ docker compose config (check syntax)
 ```
 
-**Immich**:
-```bash
-UPLOAD_LOCATION=/var/lib/containers/appdata/immich/upload
-DB_DATA_LOCATION=/var/lib/containers/appdata/immich/postgres
-DB_PASSWORD=xxxxx
-IMMICH_MACHINE_LEARNING_URL=http://192.168.1.x:3003  # Unraid ML service
+### When User Reports Service Not Working
+
+```
+1. Check service status:
+   docker compose ps
+
+2. IF container not running:
+   ├─ Check logs: docker compose logs -f <service>
+   ├─ IF permission denied → See permission decision tree above
+   ├─ IF port conflict → Check: netstat -tlnp | grep <port>
+   └─ IF dependency issue → Check depends_on and healthcheck
+
+3. IF container running but not accessible:
+   ├─ Check ports: docker compose ps
+   ├─ Check network: docker network inspect <network>
+   ├─ IF cross-stack communication needed:
+   │  └─ Add both networks to both services
+   └─ IF external service (Immich-ML):
+      └─ Test: curl http://REMOTE_IP:PORT
+
+4. IF QuickSync not working:
+   ├─ Check device exists: ls -la /dev/dri/
+   ├─ Check container access: docker exec <container> ls -la /dev/dri/
+   ├─ Check LIBVA_DRIVER_NAME=iHD (Jellyfin)
+   └─ Test: docker exec jellyfin vainfo
 ```
 
-**Watchtower**:
+---
+
+## ABSOLUTE RULES (NEVER VIOLATE)
+
+### NEVER Do These (System Will Break):
+
+1. **Remove `:z` from writable bind mounts**
+   - Containers will fail with permission denied
+   - SELinux will block all write operations
+
+2. **Add `:z` to Docker socket**
+   - Will cause permission issues
+   - Always use `:ro` only
+
+3. **Add `:z` to named volumes**
+   - Docker manages these automatically
+   - Adding :z will cause errors
+
+4. **Change Plex to bridge network**
+   - Breaks device discovery
+   - Breaks remote access
+   - Breaks DLNA
+
+5. **Add ML container to mini PC Immich stack**
+   - Mini PC has no GPU
+   - Would be CPU-only (very slow)
+   - Breaks documented architecture
+
+6. **Modify Nextcloud sub-containers directly**
+   - AIO will override changes
+   - May break entire AIO system
+
+7. **Modify systemd units without testing**
+   - System is remote - cannot physically recover
+   - Could lose access entirely
+
+8. **Change network configuration**
+   - WireGuard tunnel is critical for access
+   - Tailscale is backup access
+   - Loss of both = system unreachable
+
+9. **Hardcode secrets in compose files**
+   - Security risk
+   - Git history exposure
+   - Always use ${VAR} from .env
+
+10. **Use `apt`, `dnf`, or `yum`**
+    - Fedora CoreOS is immutable
+    - Use rpm-ostree for system packages (requires reboot)
+    - Prefer containerized solutions
+
+### ALWAYS Do These:
+
+1. **Validate compose syntax before committing**
+   ```bash
+   docker compose config
+   ```
+
+2. **Check for SELinux denials after changes**
+   ```bash
+   sudo ausearch -m avc -ts recent
+   ```
+
+3. **Use environment variables for paths and secrets**
+   - `${APPDATA_PATH}/service:/config:z`
+   - `${DB_PASSWORD}` not `password123`
+
+4. **Include standard environment variables**
+   - PUID=${PUID:-1000}
+   - PGID=${PGID:-1000}
+   - TZ=${TZ:-America/New_York}
+
+5. **Document changes**
+   - Update .env.example with new variables
+   - Update stack README.md
+   - Add comments explaining why
+
+6. **Consider remote hosting constraint**
+   - Can this change cause boot failure?
+   - Can this change break systemd?
+   - Is there a rollback plan?
+
+7. **Respect systemd management**
+   - Services controlled by systemd
+   - Don't suggest manual `docker compose up`
+   - Suggest: `systemctl restart docker-compose-<stack>.service`
+
+---
+
+## VALIDATION CHECKLIST
+
+Before suggesting ANY changes to compose files, verify:
+
+**SELinux Compliance:**
+- [ ] All writable bind mounts have `:z`
+- [ ] Docker socket has `:ro` only (no `:z`)
+- [ ] System files have `:ro` only (no `:z`)
+- [ ] NFS mounts have `:ro` only (no `:z`)
+- [ ] Named volumes have no tags
+
+**Security:**
+- [ ] No hardcoded secrets
+- [ ] Secrets use `${VAR}` from .env
+- [ ] Internet-facing services have `no-new-privileges:true`
+- [ ] Database ports not externally exposed
+
+**Patterns:**
+- [ ] PUID/PGID/TZ environment variables included
+- [ ] Container name specified
+- [ ] Appropriate network assigned
+- [ ] Watchtower label included (unless explicitly disabled)
+- [ ] `restart: unless-stopped` (not `always`)
+
+**Stack-Specific:**
+- [ ] Management stack: Uses `docker-compose.yml` filename
+- [ ] Plex: Uses host network mode
+- [ ] Jellyfin: Has `LIBVA_DRIVER_NAME=iHD`
+- [ ] QuickSync services: Have `/dev/dri` device
+- [ ] Nextcloud: Only mastercontainer in compose
+- [ ] Immich: Has `IMMICH_MACHINE_LEARNING_URL` set
+- [ ] Immich database: Uses `tensorchord/pgvecto-rs` image
+
+**Testing:**
+- [ ] `docker compose config` passes
+- [ ] Volume paths exist on host
+- [ ] No port conflicts
+- [ ] Environment variables defined in .env.example
+- [ ] Documentation updated
+
+---
+
+## QUICK REFERENCE
+
+### File Locations
+- **Repository:** `/srv/containers/`
+- **Appdata:** `/var/lib/containers/appdata/`
+- **NFS Media:** `/mnt/nas-media` (read-only)
+- **Management:** `management/docker-compose.yml` (exception to naming)
+- **Others:** `<stack>/compose.yml` (with symlink to `docker-compose.yml`)
+
+### Common Environment Variables
 ```bash
-WATCHTOWER_SCHEDULE=0 0 4 * * *  # Cron: daily at 4 AM
-WATCHTOWER_NOTIFICATION_URL=...  # Shoutrrr notification URL
+PUID=1000
+PGID=1000
+TZ=America/New_York
+APPDATA_PATH=/var/lib/containers/appdata
 ```
 
-## Systemd Integration
-
-Services are managed via systemd, not manual `docker compose` commands.
-
-### Service File Pattern
+### Systemd Service Pattern
 ```ini
 [Unit]
 Description=Docker Compose [Stack] Stack
 Requires=docker.service network-online.target
 After=docker.service network-online.target
-RequiresMountsFor=/mnt/nas-media  # If NFS required
+RequiresMountsFor=/mnt/nas-media  # If NFS needed
 
 [Service]
 Type=oneshot
@@ -385,232 +504,84 @@ TimeoutStartSec=600
 WantedBy=multi-user.target
 ```
 
-### Service Management
+### Troubleshooting Commands
 ```bash
-# Enable on boot
-systemctl enable docker-compose-[stack].service
-
-# Start/stop
-systemctl start docker-compose-[stack].service
-systemctl stop docker-compose-[stack].service
-
-# Status and logs
-systemctl status docker-compose-[stack].service
-journalctl -u docker-compose-[stack].service -f
-```
-
-## Common SELinux Issues and Fixes
-
-### Issue 1: Permission Denied Errors
-
-**Symptom:**
-```
-Error: EACCES: permission denied, open '/config/config.yaml'
-mkdir: cannot create directory '/data': Permission denied
-```
-
-**Cause:** Missing `:z` tag on volume mount
-
-**Fix:**
-```yaml
-# Before (broken on Fedora CoreOS)
-volumes:
-  - ${APPDATA_PATH}/service:/config
-
-# After (fixed)
-volumes:
-  - ${APPDATA_PATH}/service:/config:z
-```
-
-### Issue 2: SELinux Denial Logs
-
-**Check for SELinux denials:**
-```bash
-# View recent SELinux denials
-sudo ausearch -m avc -ts recent
-
-# Check SELinux context of directory
-ls -Z /var/lib/containers/appdata/service
-
-# Should see: system_u:object_r:svirt_sandbox_file_t:s0
-# If you see: unconfined_u:object_r:var_lib_t:s0 - needs :z tag
-```
-
-**Manually relabel if needed** (usually not necessary):
-```bash
-sudo chcon -Rt svirt_sandbox_file_t /var/lib/containers/appdata/service
-```
-
-### Issue 3: Docker Socket Access Denied
-
-**Symptom:**
-```
-Error response from daemon: dial unix /var/run/docker.sock: permission denied
-```
-
-**Cause:** Incorrectly added `:z` to Docker socket mount
-
-**Fix:**
-```yaml
-# Wrong (causes issues)
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:z
-
-# Correct
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro
-```
-
-## Troubleshooting Quick Reference
-
-### Container Won't Start
-```bash
-# Check logs
-docker logs <container_name>
-
-# Verify compose syntax
-cd /srv/containers/<stack>
-docker compose config
-
-# Check for SELinux denials
+# Check SELinux denials
 sudo ausearch -m avc -ts recent | grep denied
 
-# Verify file permissions and SELinux context
-ls -laZ ${APPDATA_PATH}/<service>
-```
-
-### Permission Issues
-```bash
-# Check ownership
-ls -la ${APPDATA_PATH}/<service>
-
-# Fix ownership (if needed)
-chown -R 1000:1000 ${APPDATA_PATH}/<service>
-
 # Check SELinux context
-ls -Z ${APPDATA_PATH}/<service>
-```
+ls -Z /var/lib/containers/appdata/<service>
 
-### QuickSync Not Working
-```bash
-# Check device access
-ls -la /dev/dri/
-
-# Verify inside container
-docker exec <container> ls -la /dev/dri/
-
-# Check driver (Jellyfin)
-docker exec jellyfin vainfo
-```
-
-### NFS Mount Issues
-```bash
-# Verify mount
-mount | grep nas-media
-
-# Test NFS server
-showmount -e <nfs_server_ip>
-
-# Remount
-umount /mnt/nas-media
-mount /mnt/nas-media
-```
-
-### Immich-ML Connectivity
-```bash
-# Test from mini PC
-curl http://<unraid_ip>:3003/ping
-
-# Check Immich logs
-docker logs immich_server | grep -i "machine learning"
-
-# Verify ML service on Unraid
-ssh unraid
-docker ps | grep immich
-```
-
-## Critical Warnings
-
-### ⚠️ NEVER Do These
-
-1. **Remove `:z` tags from writable volume mounts**
-   - Will cause "permission denied" errors on Fedora CoreOS
-   - Containers won't be able to write to mounted directories
-
-2. **Add `:z` to Docker socket mounts**
-   - Will cause permission issues
-   - Always use `:ro` only for `/var/run/docker.sock`
-
-3. **Add `:z` to named Docker volumes**
-   - Not needed for Docker-managed volumes
-   - Docker handles SELinux labels automatically
-
-4. **Change Plex to bridge network**
-   - Breaks device discovery
-   - Breaks remote access
-   - Keep host mode
-
-5. **Add ML container to mini PC Immich stack**
-   - Mini PC has no GPU
-   - Breaks documented architecture
-   - CPU-only ML is slow
-
-6. **Modify Nextcloud sub-containers directly**
-   - AIO will override changes
-   - May break AIO management
-   - Use AIO interface instead
-
-7. **Modify systemd units without testing**
-   - Remote system can't be recovered easily
-   - Test in duplicate environment first
-
-8. **Change network configuration**
-   - WireGuard tunnel disruption = service outage
-   - Always have out-of-band access plan
-
-## Key Operational Considerations
-
-1. **SELinux Enforcing**: All writable bind mounts MUST have `:z` tag
-2. **Immutable OS**: Fedora CoreOS uses rpm-ostree. Package installation requires layering and reboot.
-3. **Remote Access**: Physical access requires Marcus. Avoid risky changes.
-4. **Systemd Management**: Services managed via systemd, not manual `docker compose` commands.
-5. **NFS Dependencies**: Media stack requires NFS mount. Check systemd dependencies.
-6. **Watchtower Updates**: Automatic updates enabled. Monitor for issues after 4 AM.
-7. **Docker Runtime**: System uses Docker (not Podman).
-8. **AIO Management**: Nextcloud sub-containers managed by AIO, not compose.
-9. **Split Architecture**: Immich-ML runs on separate hardware. Network connectivity critical.
-
-## Validation Steps Before Applying Changes
-
-**Always validate**:
-```bash
-# 1. Compose syntax
+# Validate compose
 docker compose config
 
-# 2. Environment variables resolved
-docker compose config | grep -A 5 environment
+# Check container logs
+docker compose logs -f <service>
 
-# 3. Volume paths exist
-ls -la ${APPDATA_PATH}/<service>
-
-# 4. SELinux contexts correct
-ls -Z ${APPDATA_PATH}/<service>
-
-# 5. No port conflicts
-netstat -tlnp | grep <port>
-
-# 6. Check for SELinux denials after start
-docker compose up -d
-sudo ausearch -m avc -ts recent
+# Check service status
+systemctl status docker-compose-<stack>.service
 ```
 
-## Additional Resources
+---
 
-- **DEPLOYMENT.md**: Detailed deployment procedures and systemd setup
-- **README.md**: Quick start and overview
-- **agents.md**: Same content as this file
-- **Stack READMEs**: Service-specific documentation in each directory
-- **Fedora CoreOS Docs**: https://docs.fedoraproject.org/en-US/fedora-coreos/
-- **Docker SELinux Docs**: https://docs.docker.com/storage/bind-mounts/#configure-the-selinux-label
-- **Immich Docs**: https://immich.app/docs
-- **Nextcloud AIO Docs**: https://github.com/nextcloud/all-in-one
+## RESPONSE FORMAT
+
+When suggesting changes to compose files:
+
+1. **State what you're doing and why**
+2. **Show the exact YAML to add/change**
+3. **Highlight SELinux tags explicitly**
+4. **Explain any deviations from patterns**
+5. **Provide validation commands**
+6. **Warn about potential issues**
+
+Example:
+```
+I'll add Radarr to the web stack. This service needs:
+- Writable appdata mount (requires :z tag)
+- Read-only media mount (requires :ro only)
+- Connection to web network for VPS access
+
+Here's the configuration:
+
+```yaml
+radarr:
+  image: lscr.io/linuxserver/radarr:latest
+  container_name: radarr
+  restart: unless-stopped
+  environment:
+    - PUID=${PUID:-1000}
+    - PGID=${PGID:-1000}
+    - TZ=${TZ:-America/New_York}
+  ports:
+    - "7878:7878"
+  volumes:
+    - ${APPDATA_PATH}/radarr:/config:z        # Writable - needs :z
+    - /mnt/nas-media:/media:ro                 # Read-only NFS - :ro only
+  networks:
+    - web
+  labels:
+    - "com.centurylinklabs.watchtower.enable=true"
+```
+
+Add to .env.example:
+```bash
+# Radarr - Movie management
+RADARR_PORT=7878
+```
+
+Validate with:
+```bash
+cd /srv/containers/web
+docker compose config
+```
+
+After deploying, restart the systemd service:
+```bash
+systemctl restart docker-compose-web.service
+```
+```
+
+---
+
+**Remember:** Stability and SELinux compliance are non-negotiable. When in doubt, ask for clarification rather than making assumptions.
