@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Immich Main Stack (Mini PC)
 # This stack runs the main Immich services without the ML container
 # The ML container runs separately on the fileserver with CUDA support

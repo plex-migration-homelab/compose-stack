@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Management Stack - Infrastructure management and monitoring tools
 # Portainer for container management, Watchtower for automatic updates
 
@@ -36,7 +34,7 @@ services:
       - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-shoutrrr}
       - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:z
     networks:
       - management
     labels:

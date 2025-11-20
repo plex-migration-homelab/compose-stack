@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Nextcloud All-in-One Stack
 # This uses the official Nextcloud AIO container which includes all components
 # See: https://github.com/nextcloud/all-in-one

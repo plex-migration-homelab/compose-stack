@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Immich Machine Learning Stack (Fileserver with NVIDIA P2000)
 # This stack runs only the ML container with CUDA support
 # It provides ML services to the main Immich stack running on the mini PC
