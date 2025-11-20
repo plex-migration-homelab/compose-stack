@@ -97,7 +97,7 @@ TimeoutStartSec=0
 WantedBy=multi-user.target
 ```
 
-Repeat for web and cloud stacks, changing the description and working directory.
+Repeat for web, cloud, and management stacks, changing the description and working directory.
 
 ### Enable and Start Services
 
@@ -106,6 +106,7 @@ Repeat for web and cloud stacks, changing the description and working directory.
 sudo systemctl daemon-reload
 
 # Enable services to start on boot
+sudo systemctl enable docker-compose-management.service  # Start first for monitoring
 sudo systemctl enable docker-compose-media.service
 sudo systemctl enable docker-compose-web.service
 sudo systemctl enable docker-compose-nextcloud.service
@@ -113,12 +114,14 @@ sudo systemctl enable docker-compose-immich.service
 # Note: immich-ml runs on fileserver, create service there
 
 # Start services
+sudo systemctl start docker-compose-management.service
 sudo systemctl start docker-compose-media.service
 sudo systemctl start docker-compose-web.service
 sudo systemctl start docker-compose-nextcloud.service
 sudo systemctl start docker-compose-immich.service
 
 # Check status
+sudo systemctl status docker-compose-management.service
 sudo systemctl status docker-compose-media.service
 ```
 
@@ -260,6 +263,24 @@ docker compose ps
 # System logs
 journalctl -u docker-compose-media.service -f
 ```
+
+### Portainer Web UI
+
+The management stack includes Portainer for GUI-based container management:
+
+1. **Access Portainer**: Navigate to `http://YOUR_SERVER_IP:9000` or `https://YOUR_SERVER_IP:9443`
+2. **Initial Setup**: Create an admin account on first access
+3. **Connect Environment**: Portainer auto-detects the local Docker environment
+4. **View Stacks**: All your compose stacks (media, web, management, nextcloud, immich) will appear under "Stacks"
+
+Portainer provides:
+- Real-time container stats and logs
+- Quick restart/stop/start operations
+- Compose file editing through UI
+- Resource usage monitoring
+- Network and volume management
+
+**Note**: Portainer works alongside your CLI workflow - changes made in either interface are reflected in both.
 
 ## Stack-Specific Deployment Notes
 

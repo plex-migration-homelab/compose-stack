@@ -4,6 +4,7 @@ This repository contains Docker Compose configurations for a complete homelab st
 
 - **Media Stack** (`media/`) - Media management and streaming services (Plex, Jellyfin)
 - **Web Stack** (`web/`) - Web applications and dashboards (Nginx Proxy Manager, Overseerr, Wizarr)
+- **Management Stack** (`management/`) - Infrastructure management and monitoring (Portainer)
 - **Nextcloud Stack** (`nextcloud/`) - Self-hosted cloud storage and collaboration using Nextcloud AIO
 - **Immich Stack** (`immich/`) - Self-hosted photo management and backup (main services)
 - **Immich ML Stack** (`immich-ml/`) - Machine learning services for Immich with GPU acceleration
@@ -14,6 +15,7 @@ This repository contains Docker Compose configurations for a complete homelab st
 /srv/containers/
 ├── media/          # Media streaming stack
 ├── web/            # Web applications stack
+├── management/     # Infrastructure management stack
 ├── nextcloud/      # Nextcloud All-in-One stack
 ├── immich/         # Immich main services (mini PC)
 └── immich-ml/      # Immich ML with GPU (fileserver)
