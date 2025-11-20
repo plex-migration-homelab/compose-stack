@@ -1,189 +1,435 @@
-# Claude AI Agent Guidelines for Docker Compose Stack
+# Claude Technical Reference: Docker Compose Homelab
 
-This document provides guidelines for Claude AI when working with this Docker Compose homelab stack.
+Technical reference for providing support on this UBlue CoreOS-based homelab Docker Compose stack.
 
-## Important: SELinux Volume Mount Requirements
+## System Architecture
 
-**CRITICAL**: This stack runs on **Fedora** with SELinux enabled. All volume mounts MUST include the `:z` tag for proper SELinux context.
+### Hardware Environment
+- **NAB9 Mini PC** (Primary host)
+  - CPU: 12th gen Intel i5 with QuickSync
+  - RAM: 32GB
+  - OS: UBlue CoreOS (immutable, rpm-ostree based)
+  - Runtime: Docker (not Podman)
+  - Storage: Local appdata + NFS mounts
 
-### SELinux Volume Tag Rules
+- **Unraid File Server**
+  - ZFS array with NFS exports
+  - Hosts Immich-ML service (NVIDIA P2000 GPU)
+  - Media storage: `/mnt/nas/media`
 
-When creating or modifying Docker Compose files:
+- **Digital Ocean VPS**
+  - Runs NginxProxyManager
+  - WireGuard tunnel to mini PC
+  - Public-facing service endpoint
 
-1. **Always add `:z` to bind-mounted volumes**
-   ```yaml
-   volumes:
-     - ${APPDATA_PATH}/service:/config:z        # Correct
-     - /mnt/data:/data:z                        # Correct
-     - ${APPDATA_PATH}/service:/config          # WRONG - Missing :z
-   ```
+### Network Topology
+- **WireGuard Tunnel**: VPS ↔ Mini PC for secure public access
+- **Tailscale**: Internal network access across all devices
+- **NFS**: File server → Mini PC for media library
 
-2. **Keep `:ro` for read-only mounts without `:z`**
-   ```yaml
-   volumes:
-     - /var/run/docker.sock:/var/run/docker.sock:ro  # Correct - system socket
-     - /etc/localtime:/etc/localtime:ro               # Correct - system file
-   ```
-
-3. **Named volumes do NOT need `:z`**
-   ```yaml
-   volumes:
-     - model-cache:/cache      # Correct - named volume
-
-   volumes:
-     model-cache:
-       name: immich_model_cache
-   ```
-
-### When to Use SELinux Tags
-
-- ✅ **Use `:z`**: Application data directories (`${APPDATA_PATH}/*`)
-- ✅ **Use `:z`**: User-writable mount points
-- ✅ **Use `:z`**: Database data directories
-- ✅ **Use `:z`**: Upload/storage directories
-- ❌ **Do NOT use `:z`**: Docker socket (`/var/run/docker.sock`)
-- ❌ **Do NOT use `:z`**: System files (read-only)
-- ❌ **Do NOT use `:z`**: Named Docker volumes
-
-### Examples from This Stack
-
-**Web Stack** (nginxproxymanager):
-```yaml
-volumes:
-  - ${APPDATA_PATH}/nginxproxymanager:/config:z  # Writable config
-```
-
-**Immich Stack**:
-```yaml
-volumes:
-  - ${UPLOAD_LOCATION}:/usr/src/app/upload:z              # Uploads
-  - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z        # Database
-  - /etc/localtime:/etc/localtime:ro                       # System time (read-only)
-```
-
-**Management Stack** (portainer):
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker socket (read-only)
-  - ${APPDATA_PATH}/portainer:/data:z               # Application data
-```
+### Critical Constraint
+**Remote hosting**: Mini PC is physically remote. Boot failures or systemd issues require Marcus intervention. Stability is paramount.
 
 ## Repository Structure
 
 ```
 /srv/containers/
-├── media/          # Media streaming (Plex, Jellyfin)
-├── web/            # Web applications (Nginx Proxy Manager, Overseerr)
-├── management/     # Infrastructure (Portainer, Watchtower)
-└── cloud/          # Cloud services
-    ├── immich/       # Photo management (main services)
-    ├── immich-ml/    # ML services with GPU
-    └── nextcloud/    # File sync and share
+├── management/
+│   └── docker-compose.yml       # Note: NOT compose.yml
+├── media/
+│   ├── compose.yml
+│   └── docker-compose.yml       # Symlink to compose.yml
+├── web/
+│   ├── compose.yml
+│   └── docker-compose.yml       # Symlink to compose.yml
+├── cloud/
+│   ├── nextcloud/               # Nextcloud AIO (all-in-one)
+│   ├── immich/                  # Immich main services (mini PC)
+│   └── immich-ml/               # Documentation only (service on Unraid)
+├── DEPLOYMENT.md
+├── README.md
+├── claude.md                    # This file
+└── agents.md                    # AI agent operational guidelines
 ```
 
-## Stack Organization
+### File Naming Convention
+- **Management stack**: Uses single `docker-compose.yml` (historical)
+- **All other stacks**: `compose.yml` with symlink `docker-compose.yml → compose.yml`
 
-### Media Stack
-- **Location**: `media/`
-- **Services**: Plex, Jellyfin
-- **Hardware**: Intel QuickSync transcoding
-- **Network**: Host network mode for Plex
-- **Special Notes**: NFS-mounted media library at `/mnt/nas-media`
+## Stack Descriptions
 
-### Web Stack
-- **Location**: `web/`
-- **Services**: Nginx Proxy Manager, Overseerr, Wizarr, Homepage
-- **Network**: Bridge network named `web`
-- **Purpose**: User-facing web applications
+### Management Stack (`management/`)
+Infrastructure services for monitoring and container management.
 
-### Management Stack
-- **Location**: `management/`
-- **Services**: Portainer, Watchtower, Tautulli
-- **Network**: Bridge network named `management`
-- **Purpose**: Infrastructure monitoring and container management
+**Services**:
+- **Portainer** (9000, 9443): Container management UI
+- **Watchtower**: Automatic container updates (label-based)
+- **Tautulli** (8181): Plex monitoring and statistics
 
-### Cloud Services (Split Deployment)
+**Network**: Bridge network `management`
 
-#### Immich Main Stack
-- **Location**: `cloud/immich/`
-- **Host**: Mini PC
-- **Services**: Immich server, microservices, PostgreSQL, Redis
-- **Database**: pgvecto-rs (PostgreSQL with vector extensions)
-- **Important**: Set `IMMICH_MACHINE_LEARNING_URL` to point to fileserver ML service
+### Media Stack (`media/`)
+Media streaming services with Intel QuickSync hardware transcoding.
 
-#### Immich ML Stack
-- **Location**: `cloud/immich-ml/`
-- **Host**: Fileserver with NVIDIA P2000 GPU
-- **Services**: Machine learning container only
-- **Requirements**: NVIDIA Container Toolkit, CUDA support
-- **Deployment**: Via Docker web UI (see `DOCKER-UI-DEPLOYMENT.md`)
-- **Port**: 3003 (must be accessible from mini PC)
+**Services**:
+- **Plex** (32400): Media server, host network mode
+- **Jellyfin** (8096): Alternative media server
 
-#### Nextcloud AIO
-- **Location**: `cloud/nextcloud/`
-- **Services**: All-in-One mastercontainer (auto-manages sub-containers)
-- **Ports**: 8080 (admin), 11000 (Apache)
-- **Special**: Uses AIO system that creates its own containers
+**Hardware Access**: `/dev/dri:/dev/dri` for QuickSync
+**Environment**: `LIBVA_DRIVER_NAME=iHD` for Jellyfin
+**Storage**: NFS-mounted media at `/mnt/nas-media` (read-only)
+**Network**: Plex uses host mode, Jellyfin on bridge network `media`
+
+### Web Stack (`web/`)
+User-facing web applications proxied through VPS.
+
+**Services**:
+- **NginxProxyManager** (80, 443, 81): Reverse proxy and SSL
+- **Overseerr** (5055): Media request management
+- **Wizarr** (5690): User invitation system
+- **Homepage** (3000): Dashboard with Docker socket access
+
+**Network**: Bridge network `web`
+**Public Access**: Via WireGuard tunnel to VPS
+
+### Cloud Services (`cloud/`)
+
+#### Nextcloud (`cloud/nextcloud/`)
+**Architecture**: Nextcloud AIO (All-in-One)
+- Single mastercontainer manages all sub-containers
+- Auto-deploys: Nextcloud, PostgreSQL, Redis, Apache, Collabora, Talk, etc.
+- **Not** a multi-container compose stack
+
+**Ports**:
+- 8080: AIO admin interface
+- 11000: Apache (configured via `APACHE_PORT`)
+
+**Management**: Via AIO web interface at port 8080
+
+#### Immich Main Services (`cloud/immich/`)
+**Host**: NAB9 Mini PC
+
+**Services**:
+- **immich-server** (2283): Web UI and API
+- **immich-microservices**: Background processing
+- **PostgreSQL**: tensorchord/pgvecto-rs (vector extensions)
+- **Redis**: Caching and queues
+
+**Critical Configuration**:
+```yaml
+environment:
+  - IMMICH_MACHINE_LEARNING_URL=http://UNRAID_IP:3003
+```
+
+**Network**: Bridge network `immich`
+
+#### Immich-ML (`cloud/immich-ml/`)
+**Host**: Unraid file server (NVIDIA P2000 GPU)
+
+**Important**:
+- This directory contains **setup documentation only**
+- No compose stack runs on mini PC
+- Actual service deployed via Docker web UI on Unraid
+- Port 3003 must be accessible from mini PC
 
 ## Environment Variables
 
-Common variables used across all stacks:
-- `PUID` - User ID (default: 1000)
-- `PGID` - Group ID (default: 1000)
-- `TZ` - Timezone (e.g., America/New_York)
-- `APPDATA_PATH` - Base path for application data (typically `/var/lib/containers/appdata`)
-
-## Development Guidelines
-
-### When Adding New Services
-
-1. **Check SELinux**: Add `:z` to all writable volume mounts
-2. **Use existing patterns**: Follow the structure of similar services
-3. **Add Watchtower label**: Include `com.centurylinklabs.watchtower.enable=true`
-4. **Document**: Add README.md to stack directory if creating new stack
-5. **Environment**: Create `.env.example` with documented variables
-6. **Test**: Verify on Fedora with SELinux enforcing
-
-### When Modifying Services
-
-1. **Preserve SELinux tags**: Never remove `:z` from existing mounts
-2. **Maintain network structure**: Keep services in their designated networks
-3. **Check dependencies**: Consider service startup order
-4. **Review systemd**: Update systemd service files if needed
-5. **Update docs**: Keep README and DEPLOYMENT docs in sync
-
-### Common Pitfalls to Avoid
-
-❌ **Removing `:z` tags** - Will cause permission denied errors on Fedora
-❌ **Adding `:z` to Docker socket** - Not needed for socket mounts
-❌ **Adding `:z` to named volumes** - Not needed for Docker-managed volumes
-❌ **Hardcoded paths** - Use environment variables instead
-❌ **Missing .env.example** - Always provide example configuration
-❌ **Undocumented variables** - Comment all env vars with purpose and examples
-
-## Testing Changes
-
-When making changes to compose files:
-
+### Common Variables
 ```bash
-# Validate compose file syntax
+PUID=1000                        # User ID for file ownership
+PGID=1000                        # Group ID for file ownership
+TZ=America/New_York              # Timezone
+APPDATA_PATH=/var/lib/containers/appdata  # Application data root
+```
+
+### Stack-Specific Variables
+
+**Media**:
+```bash
+PLEX_CLAIM_TOKEN=claim-xxxxx     # Plex server claim token
+JELLYFIN_PUBLIC_URL=https://...  # Public Jellyfin URL
+```
+
+**Immich**:
+```bash
+UPLOAD_LOCATION=/var/lib/containers/appdata/immich/upload
+DB_DATA_LOCATION=/var/lib/containers/appdata/immich/postgres
+DB_PASSWORD=xxxxx
+IMMICH_MACHINE_LEARNING_URL=http://192.168.1.x:3003
+```
+
+**Watchtower**:
+```bash
+WATCHTOWER_SCHEDULE=0 0 4 * * *  # Cron: daily at 4 AM
+WATCHTOWER_NOTIFICATION_URL=...  # Shoutrrr notification URL
+```
+
+## Systemd Integration
+
+### Service File Pattern
+```ini
+[Unit]
+Description=Docker Compose [Stack] Stack
+Requires=docker.service network-online.target
+After=docker.service network-online.target
+RequiresMountsFor=/mnt/nas-media  # If NFS required
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/containers/[stack]
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Service Management
+```bash
+# Enable on boot
+systemctl enable docker-compose-[stack].service
+
+# Start/stop
+systemctl start docker-compose-[stack].service
+systemctl stop docker-compose-[stack].service
+
+# Status and logs
+systemctl status docker-compose-[stack].service
+journalctl -u docker-compose-[stack].service -f
+```
+
+### Dependency Order
+1. `docker-compose-management.service` (Portainer for monitoring)
+2. `docker-compose-media.service`
+3. `docker-compose-web.service`
+4. `docker-compose-nextcloud.service`
+5. `docker-compose-immich.service`
+
+## Storage Architecture
+
+### Local Storage
+- **Path**: `/var/lib/containers/appdata`
+- **Purpose**: Configuration, databases, caches
+- **Ownership**: PUID/PGID (typically 1000:1000)
+- **Persistence**: Survives container recreation
+
+### NFS Mounts
+- **Media Library**: `/mnt/nas-media` (read-only)
+- **Source**: Unraid ZFS array
+- **Usage**: Plex and Jellyfin media content
+- **Systemd**: Must be mounted before starting media stack
+
+### Environment Variable Pattern
+```yaml
+volumes:
+  - ${APPDATA_PATH}/service:/config:z
+  - /mnt/nas-media:/media:ro
+```
+
+## Hardware Transcoding
+
+### Intel QuickSync Configuration
+
+**Device Access**:
+```yaml
+devices:
+  - /dev/dri:/dev/dri
+```
+
+**Jellyfin Environment**:
+```yaml
+environment:
+  - LIBVA_DRIVER_NAME=iHD  # Intel iHD driver for 12th gen
+```
+
+**Benefits**:
+- Hardware-accelerated H.264/H.265 encoding/decoding
+- Low power consumption vs. GPU
+- Multiple simultaneous transcodes
+
+**Verification**:
+```bash
+ls -la /dev/dri/
+# Should show: card0, renderD128
+```
+
+## Common Compose Patterns
+
+### Standard Service Template
+```yaml
+services:
+  servicename:
+    image: namespace/image:tag
+    container_name: servicename
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-America/New_York}
+    ports:
+      - "HOST:CONTAINER"
+    volumes:
+      - ${APPDATA_PATH}/servicename:/config:z
+    networks:
+      - stack_network
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+```
+
+### Health Checks
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:PORT/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+```
+
+### Dependency Management
+```yaml
+depends_on:
+  - database
+  - redis
+```
+
+## Watchtower Auto-Updates
+
+### Enabled by Default
+```yaml
+labels:
+  - "com.centurylinklabs.watchtower.enable=true"
+```
+
+### Disable for Specific Service
+```yaml
+labels:
+  - "com.centurylinklabs.watchtower.enable=false"
+```
+
+### Update Schedule
+- Default: Daily at 4 AM
+- Configurable via `WATCHTOWER_SCHEDULE` in management stack
+- Only updates containers with `watchtower.enable=true` label
+
+## Integration Points
+
+### WireGuard Tunnel (VPS ↔ Mini PC)
+- Purpose: Secure public access to services
+- Services exposed: Overseerr, Wizarr, Plex, Jellyfin
+- Reverse proxy: NginxProxyManager on VPS
+
+### Tailscale (Internal Network)
+- Purpose: Administrative access
+- Access: Portainer, Homepage, Tautulli
+- No public exposure
+
+### NFS (Unraid → Mini PC)
+- Mount: `/mnt/nas-media`
+- Content: Movies, TV shows, music
+- Access: Read-only for Plex/Jellyfin
+- Systemd: `RequiresMountsFor=/mnt/nas-media`
+
+### Immich-ML Network Connection
+- Mini PC Immich → Unraid Immich-ML (port 3003)
+- Protocol: HTTP
+- Configuration: `IMMICH_MACHINE_LEARNING_URL` environment variable
+- Requirement: Low-latency LAN connection
+
+## Migration Context
+
+This deployment represents a **Plex migration from Unraid to CoreOS**:
+- Original: Plex on Unraid file server
+- Current: Parallel deployment on NAB9 mini PC
+- Status: Testing phase with both systems operational
+- Goal: Validate performance and stability before full cutover
+
+**Implications**:
+- Media library shared between both systems (NFS)
+- Plex databases are independent
+- Can switch back to Unraid if issues arise
+
+## Troubleshooting Quick Reference
+
+### Container Won't Start
+```bash
+# Check logs
+docker logs <container_name>
+
+# Verify compose syntax
+cd /srv/containers/<stack>
 docker compose config
 
-# Check for SELinux denials (on Fedora)
-sudo ausearch -m avc -ts recent
-
-# Test service startup
-docker compose up -d
-docker compose ps
-docker compose logs -f [service-name]
-
-# Verify file permissions
-ls -laZ ${APPDATA_PATH}/[service-name]
+# Check systemd status
+systemctl status docker-compose-<stack>.service
 ```
+
+### Permission Issues
+```bash
+# Verify ownership
+ls -la ${APPDATA_PATH}/<service>
+
+# Fix ownership
+chown -R 1000:1000 ${APPDATA_PATH}/<service>
+```
+
+### NFS Mount Issues
+```bash
+# Verify mount
+mount | grep nas-media
+
+# Test NFS server
+showmount -e <nfs_server_ip>
+
+# Remount
+umount /mnt/nas-media
+mount /mnt/nas-media
+```
+
+### QuickSync Not Working
+```bash
+# Check device access
+ls -la /dev/dri/
+
+# Verify inside container
+docker exec <container> ls -la /dev/dri/
+
+# Check driver
+docker exec jellyfin vainfo
+```
+
+### Immich-ML Connectivity
+```bash
+# Test from mini PC
+curl http://<unraid_ip>:3003/ping
+
+# Check Immich logs
+docker logs immich_server | grep -i "machine learning"
+
+# Verify ML service on Unraid
+ssh unraid
+docker ps | grep immich
+```
+
+## Key Operational Considerations
+
+1. **Immutable OS**: CoreOS uses rpm-ostree. Package installation requires layering and reboot.
+2. **Remote Access**: Physical access requires Marcus. Avoid risky changes.
+3. **Systemd Management**: Services managed via systemd, not manual `docker compose` commands.
+4. **NFS Dependencies**: Media stack requires NFS mount. Check systemd dependencies.
+5. **Watchtower Updates**: Automatic updates enabled. Monitor for issues after 4 AM.
+6. **Docker Runtime**: System uses Docker (not Podman) despite CoreOS typically using Podman.
+7. **AIO Management**: Nextcloud sub-containers managed by AIO, not compose.
+8. **Split Architecture**: Immich-ML runs on separate hardware. Network connectivity critical.
 
 ## Additional Resources
 
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment procedures
-- [README.md](README.md) - Overview and quick start
-- Stack-specific READMEs in each directory
-- [Docker SELinux Documentation](https://docs.docker.com/storage/bind-mounts/#configure-the-selinux-label)
+- **DEPLOYMENT.md**: Detailed deployment procedures and systemd setup
+- **README.md**: Quick start and overview
+- **agents.md**: Operational guidelines for AI coding assistants
+- **Stack READMEs**: Service-specific documentation in each directory
+- **UBlue CoreOS Docs**: https://universal-blue.org/
+- **Immich Docs**: https://immich.app/docs
+- **Nextcloud AIO Docs**: https://github.com/nextcloud/all-in-one
