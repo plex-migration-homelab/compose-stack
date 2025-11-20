@@ -15,7 +15,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Database
-      - DB_HOSTNAME=immich_postgres
+      - DB_HOSTNAME=PostgreSQL_Immich
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_DATABASE_NAME=${DB_DATABASE_NAME:-immich}
@@ -47,7 +47,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Database
-      - DB_HOSTNAME=immich_postgres
+      - DB_HOSTNAME=PostgreSQL_Immich
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_DATABASE_NAME=${DB_DATABASE_NAME:-immich}
@@ -75,7 +75,7 @@ services:
       - immich
 
   database:
-    container_name: immich_postgres
+    container_name: PostgreSQL_Immich
     image: tensorchord/pgvecto-rs:pg14-v0.2.0
     restart: unless-stopped
     environment:
