@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
     command: ['start.sh', 'immich']
     volumes:
-      - ${UPLOAD_LOCATION}:/usr/src/app/upload
+      - ${UPLOAD_LOCATION}:/usr/src/app/upload:z
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Database
@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
     command: ['start.sh', 'microservices']
     volumes:
-      - ${UPLOAD_LOCATION}:/usr/src/app/upload
+      - ${UPLOAD_LOCATION}:/usr/src/app/upload:z
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Database
@@ -83,7 +83,7 @@ services:
       - POSTGRES_USER=${DB_USERNAME:-postgres}
       - POSTGRES_DB=${DB_DATABASE_NAME:-immich}
     volumes:
-      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data:z
     networks:
       - immich
 
