@@ -18,11 +18,11 @@ services:
       - PLEX_CLAIM=${PLEX_CLAIM_TOKEN}
     volumes:
       # Plex configuration and metadata
-      - ${APPDATA_PATH}/plex:/config
+      - ${APPDATA_PATH}/plex:/config:z
       # Media library (read-only from NFS)
       - /mnt/nas-media:/media:ro
       # Optional: transcode directory on fast local storage
-      - ${APPDATA_PATH}/plex/transcode:/transcode
+      - ${APPDATA_PATH}/plex/transcode:/transcode:z
     devices:
       # Intel QuickSync hardware transcoding
       - /dev/dri:/dev/dri
@@ -46,8 +46,9 @@ services:
       - "7359:7359/udp"  # Auto-discovery (optional)
     volumes:
       # Jellyfin configuration and metadata
-      - ${APPDATA_PATH}/jellyfin/config:/config
-      - ${APPDATA_PATH}/jellyfin/cache:/cache
+      - ${APPDATA_PATH}/jellyfin/config:/config:z
+      - ${APPDATA_PATH}/jellyfin/cache:/cache:z
+      - ${APPDATA_PATH}/jellyfin/transcode:/transcode:z
       # Media library (read-only from NFS)
       - /mnt/nas-media:/media:ro
     devices:
@@ -68,7 +69,7 @@ services:
     ports:
       - "8181:8181"
     volumes:
-      - ${APPDATA_PATH}/tautulli:/config
+      - ${APPDATA_PATH}/tautulli:/config:z
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
