@@ -1,0 +1,61 @@
+version: '3.9'
+
+# Nextcloud All-in-One Stack
+# This uses the official Nextcloud AIO container which includes all components
+# See: https://github.com/nextcloud/all-in-one
+
+services:
+  nextcloud-aio-mastercontainer:
+    image: nextcloud/all-in-one:latest
+    container_name: nextcloud-aio-mastercontainer
+    restart: unless-stopped
+    init: true
+    # Port 8080 is for the AIO interface, 443 is for Nextcloud itself
+    ports:
+      - "8080:8080"   # AIO admin interface
+      # Optional: Uncomment if using custom ports
+      # - "443:443"   # HTTPS for Nextcloud
+      # - "8443:8443" # Alternative HTTPS port
+    environment:
+      - APACHE_PORT=11000           # Internal Apache port
+      - APACHE_IP_BINDING=0.0.0.0   # Bind to all interfaces
+      # Optional: Set a different Nextcloud datadir location
+      # - NEXTCLOUD_DATADIR=${NEXTCLOUD_DATADIR:-/mnt/nextcloud-data}
+      # Optional: Enable/disable certain containers
+      # - AIO_DISABLE_BACKUP_SECTION=false
+      # - SKIP_DOMAIN_VALIDATION=false
+      # Optional: Set timezone
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      # AIO mastercontainer manages its own Docker socket
+      - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - nextcloud_aio
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+volumes:
+  nextcloud_aio_mastercontainer:
+    name: nextcloud_aio_mastercontainer
+
+networks:
+  nextcloud_aio:
+    name: nextcloud_aio
+    driver: bridge
+
+# Notes:
+# 1. After starting, access the AIO interface at http://YOUR_IP:8080
+# 2. Follow the setup wizard to configure your domain and settings
+# 3. AIO will automatically create and manage all necessary containers
+# 4. For production, use a reverse proxy and proper SSL certificates
+# 5. Consider mounting external storage for Nextcloud data
+# 6. Default AIO components include:
+#    - Nextcloud (PHP-FPM + Apache)
+#    - PostgreSQL database
+#    - Redis cache
+#    - Collabora (document editing)
+#    - Talk (video calls)
+#    - Imaginary (image processing)
+#    - Fulltextsearch
+#    - Automatic backups

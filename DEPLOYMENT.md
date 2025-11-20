@@ -109,13 +109,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable docker-compose-management.service  # Start first for monitoring
 sudo systemctl enable docker-compose-media.service
 sudo systemctl enable docker-compose-web.service
-sudo systemctl enable docker-compose-cloud.service
+sudo systemctl enable docker-compose-nextcloud.service
+sudo systemctl enable docker-compose-immich.service
+# Note: immich-ml runs on fileserver, create service there
 
 # Start services
 sudo systemctl start docker-compose-management.service
 sudo systemctl start docker-compose-media.service
 sudo systemctl start docker-compose-web.service
-sudo systemctl start docker-compose-cloud.service
+sudo systemctl start docker-compose-nextcloud.service
+sudo systemctl start docker-compose-immich.service
 
 # Check status
 sudo systemctl status docker-compose-management.service
@@ -268,7 +271,7 @@ The management stack includes Portainer for GUI-based container management:
 1. **Access Portainer**: Navigate to `http://YOUR_SERVER_IP:9000` or `https://YOUR_SERVER_IP:9443`
 2. **Initial Setup**: Create an admin account on first access
 3. **Connect Environment**: Portainer auto-detects the local Docker environment
-4. **View Stacks**: All your compose stacks (media, web, cloud, management) will appear under "Stacks"
+4. **View Stacks**: All your compose stacks (media, web, management, nextcloud, immich) will appear under "Stacks"
 
 Portainer provides:
 - Real-time container stats and logs
@@ -278,3 +281,116 @@ Portainer provides:
 - Network and volume management
 
 **Note**: Portainer works alongside your CLI workflow - changes made in either interface are reflected in both.
+
+## Stack-Specific Deployment Notes
+
+### Nextcloud All-in-One
+
+Nextcloud uses a special AIO (All-in-One) container that manages additional containers automatically.
+
+**Initial Setup:**
+1. Deploy the stack: `cd /srv/containers/nextcloud && docker compose up -d`
+2. Get the initial admin password: `docker logs nextcloud-aio-mastercontainer | grep password`
+3. Access AIO interface: `http://YOUR_SERVER_IP:8080`
+4. Follow the setup wizard to configure domain, SSL, and components
+5. The mastercontainer will automatically create and manage all required containers
+
+**Important Notes:**
+- AIO creates containers outside of Docker Compose (managed via Docker API)
+- These containers are prefixed with `nextcloud-aio-`
+- Updates are handled through the AIO interface at port 8080
+- See `nextcloud/README.md` for detailed configuration
+
+**Storage:**
+- Default: Uses Docker volumes managed by AIO
+- For custom storage: Set `NEXTCLOUD_DATADIR` in `.env` before first start
+- Example: `NEXTCLOUD_DATADIR=/mnt/nas-storage/nextcloud`
+
+### Immich Split Deployment
+
+Immich uses a **distributed deployment** across two hosts for optimal performance.
+
+**Deployment Order:**
+
+1. **First: Deploy ML Stack on Fileserver**
+
+   The ML stack is deployed via Docker's web UI (Portainer, Yacht, etc.).
+
+   See `immich-ml/DOCKER-UI-DEPLOYMENT.md` for complete instructions.
+
+   Quick summary:
+   - Deploy `ghcr.io/immich-app/immich-machine-learning:release` image
+   - Enable GPU access (`--gpus all`)
+   - Expose port 3003
+   - Mount volume for model cache
+   - Verify with: `nvidia-smi` and `docker logs immich_machine_learning`
+
+2. **Second: Deploy Main Stack on Mini PC**
+   ```bash
+   # On mini PC
+   cd /srv/containers/immich
+   cp .env.example .env
+   nano .env  # Set IMMICH_MACHINE_LEARNING_URL=http://FILESERVER_IP:3003
+
+   # Create storage directories
+   sudo mkdir -p /var/lib/containers/appdata/immich/{upload,postgres}
+   sudo chown -R 1000:1000 /var/lib/containers/appdata/immich
+
+   docker compose up -d
+   ```
+
+3. **Verify Connection**
+   ```bash
+   # From mini PC
+   curl http://FILESERVER_IP:3003/ping
+
+   # Check Immich logs
+   docker logs immich_server
+   ```
+
+**Prerequisites for ML Stack (Fileserver):**
+- NVIDIA drivers installed: `nvidia-smi` should work
+- NVIDIA Container Toolkit installed
+- Firewall allows port 3003 from mini PC IP
+
+**Install NVIDIA Container Toolkit on Fileserver:**
+```bash
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# Verify
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+**Firewall Configuration (Fileserver):**
+```bash
+# Allow mini PC to access ML service
+sudo ufw allow from MINI_PC_IP to any port 3003
+```
+
+**Network Requirements:**
+- Low latency between mini PC and fileserver (same LAN recommended)
+- Sufficient bandwidth for image processing (1Gbps recommended)
+- Static IPs or DNS names for stable connectivity
+
+**Troubleshooting:**
+- If ML features don't work, check `docker logs immich_machine_learning` on fileserver
+- Verify network connectivity: `ping` and `curl` tests from mini PC
+- Check Immich server logs: `docker logs immich_server` for ML connection errors
+
+### Systemd Services for Split Deployment
+
+**Mini PC** - Create standard systemd service for Immich:
+```bash
+sudo nano /etc/systemd/system/docker-compose-immich.service
+```
+
+Follow the same format as the media/web stacks (see earlier in this document).
+
+**Fileserver** - The immich-ml container is deployed via Docker web UI and will auto-restart with Docker. If using Docker Compose instead, follow the same systemd service pattern. For web UI deployments, the restart policy (`unless-stopped`) handles automatic startup.

@@ -1,0 +1,53 @@
+version: '3.9'
+
+# Immich Machine Learning Stack (Fileserver with NVIDIA P2000)
+# This stack runs only the ML container with CUDA support
+# It provides ML services to the main Immich stack running on the mini PC
+
+services:
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    restart: unless-stopped
+    volumes:
+      - model-cache:/cache
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - LOG_LEVEL=${LOG_LEVEL:-log}
+      # CUDA/GPU settings
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    ports:
+      - "3003:3003"  # Expose ML service port for remote access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - immich_ml
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+volumes:
+  model-cache:
+    name: immich_model_cache
+
+networks:
+  immich_ml:
+    name: immich_ml
+    driver: bridge
+
+# Notes:
+# 1. This requires NVIDIA Container Toolkit to be installed
+# 2. Install with: distribution=$(. /etc/os-release;echo $ID$VERSION_ID) \
+#    && curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - \
+#    && curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+#    && sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+#    && sudo systemctl restart docker
+# 3. Verify GPU access: docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+# 4. Port 3003 must be accessible from the mini PC running main Immich
+# 5. Configure firewall to allow traffic from mini PC IP to port 3003
+# 6. Model cache is stored in a volume for faster subsequent loads
