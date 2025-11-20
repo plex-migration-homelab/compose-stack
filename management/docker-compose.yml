@@ -1,0 +1,65 @@
+version: '3.9'
+
+# Management Stack - Infrastructure management and monitoring tools
+# Portainer for container management, Watchtower for automatic updates
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ:-America/New_York}
+    ports:
+      - "9000:9000"    # Web UI
+      - "9443:9443"    # HTTPS Web UI
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${APPDATA_PATH}/portainer:/data
+    networks:
+      - management
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 4 * * *}  # Daily at 4 AM
+      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-shoutrrr}
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - management
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  tautulli:
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-America/New_York}
+    ports:
+      - "8181:8181"
+    volumes:
+      - ${APPDATA_PATH}/tautulli:/config:z
+    networks:
+      - management
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  management:
+    name: management
+    driver: bridge

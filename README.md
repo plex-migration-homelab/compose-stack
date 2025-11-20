@@ -1,10 +1,11 @@
 # Docker Compose Homelab Stack
 
-This repository contains Docker Compose configurations for a complete homelab stack organized into three main categories:
+This repository contains Docker Compose configurations for a complete homelab stack organized into four main categories:
 
 - **Media Stack** (`media/`) - Media management and streaming services
 - **Web Stack** (`web/`) - Web applications and dashboards
 - **Cloud Stack** (`cloud/`) - Self-hosted cloud services and collaboration tools
+- **Management Stack** (`management/`) - Infrastructure management and monitoring tools
 
 ## Structure
 
@@ -12,7 +13,8 @@ This repository contains Docker Compose configurations for a complete homelab st
 /srv/containers/
 ├── media/          # Media management stack
 ├── web/            # Web applications stack
-└── cloud/          # Cloud services stack
+├── cloud/          # Cloud services stack
+└── management/     # Infrastructure management stack
 ```
 
 Each directory contains:
