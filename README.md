@@ -1,18 +1,22 @@
 # Docker Compose Homelab Stack
 
-This repository contains Docker Compose configurations for a complete homelab stack organized into three main categories:
+This repository contains Docker Compose configurations for a complete homelab stack organized into multiple specialized stacks:
 
-- **Media Stack** (`media/`) - Media management and streaming services
-- **Web Stack** (`web/`) - Web applications and dashboards
-- **Cloud Stack** (`cloud/`) - Self-hosted cloud services and collaboration tools
+- **Media Stack** (`media/`) - Media management and streaming services (Plex, Jellyfin)
+- **Web Stack** (`web/`) - Web applications and dashboards (Nginx Proxy Manager, Overseerr, Wizarr)
+- **Nextcloud Stack** (`nextcloud/`) - Self-hosted cloud storage and collaboration using Nextcloud AIO
+- **Immich Stack** (`immich/`) - Self-hosted photo management and backup (main services)
+- **Immich ML Stack** (`immich-ml/`) - Machine learning services for Immich with GPU acceleration
 
 ## Structure
 
 ```
 /srv/containers/
-├── media/          # Media management stack
+├── media/          # Media streaming stack
 ├── web/            # Web applications stack
-└── cloud/          # Cloud services stack
+├── nextcloud/      # Nextcloud All-in-One stack
+├── immich/         # Immich main services (mini PC)
+└── immich-ml/      # Immich ML with GPU (fileserver)
 ```
 
 Each directory contains:
@@ -24,9 +28,23 @@ Each directory contains:
 ## Quick Start
 
 1. Clone this repository to `/srv/containers/`
-2. Navigate to the desired stack directory (media, web, or cloud)
+2. Navigate to the desired stack directory
 3. Copy `.env.example` to `.env` and customize variables
 4. Run `docker compose up -d` to start the stack
+
+### Special Considerations
+
+**Nextcloud AIO:**
+- Uses a mastercontainer that manages other containers automatically
+- Access setup interface at `http://YOUR_IP:8080` after first start
+- See `nextcloud/README.md` for detailed setup instructions
+
+**Immich Split Deployment:**
+- Main stack (`immich/`) runs on mini PC - handles web UI, storage, database
+- ML stack (`immich-ml/`) runs on fileserver - provides GPU-accelerated ML
+- Configure `IMMICH_MACHINE_LEARNING_URL` in `immich/.env` to point to fileserver
+- Requires NVIDIA Container Toolkit on fileserver
+- See respective README files for detailed setup
 
 ## Environment Variables
 
