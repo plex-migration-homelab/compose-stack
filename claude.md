@@ -167,14 +167,12 @@ volumes:
 
 **WHEN** modifying this stack:
 - Server and microservices MUST have: `IMMICH_MACHINE_LEARNING_URL=http://UNRAID_IP:3003`
-- Database MUST use `tensorchord/pgvecto-rs:pg14-v0.2.0` image (NOT standard postgres)
 - All uploads MUST use `:z`: `${UPLOAD_LOCATION}:/usr/src/app/upload:z`
 - Database MUST use `:z`: `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z`
 - System time MUST use `:ro`: `/etc/localtime:/etc/localtime:ro`
 
 **NEVER:**
 - Add `immich-machine-learning` container to this compose file (runs on Unraid)
-- Use standard PostgreSQL image (must be pgvecto-rs)
 - Remove `IMMICH_MACHINE_LEARNING_URL` from server or microservices
 
 **IF** user asks about ML container:
