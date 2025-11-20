@@ -57,22 +57,6 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
-# Optional: Media management tools
-  tautulli:
-    image: lscr.io/linuxserver/tautulli:latest
-    container_name: tautulli
-    restart: unless-stopped
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-America/New_York}
-    ports:
-      - "8181:8181"
-    volumes:
-      - ${APPDATA_PATH}/tautulli:/config:z
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-
 # Networks are not needed for host network mode
 # But we can define them for future services if needed
 networks:
