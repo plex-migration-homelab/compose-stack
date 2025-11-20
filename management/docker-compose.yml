@@ -17,7 +17,7 @@ services:
       - "9443:9443"    # HTTPS Web UI
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${APPDATA_PATH}/portainer:/data
+      - ${APPDATA_PATH}/portainer:/data:z
     networks:
       - management
     labels:
