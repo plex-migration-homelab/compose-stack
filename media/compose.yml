@@ -55,6 +55,58 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
+  komga:
+    image: gotson/komga:latest
+    container_name: komga
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - KOMGA_LIBRARIES_SCAN_DIRECTORY_EXCLUSIONS=${KOMGA_LIBRARIES_SCAN_DIRECTORY_EXCLUSIONS:-#recycle,@eaDir}
+    ports:
+      - "25600:25600"
+    volumes:
+      # Komga configuration and database
+      - ${APPDATA_PATH}/komga:/config:z
+      # Media libraries (read-only from NFS)
+      - /mnt/nas-media/ebooks:/books:ro
+      - /mnt/nas-media/manga:/manga:ro
+    networks:
+      - media
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:25600/api/v1/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  komga-kobo:
+    image: gotson/komga:latest
+    container_name: komga-kobo
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - KOMGA_LIBRARIES_SCAN_DIRECTORY_EXCLUSIONS=${KOMGA_LIBRARIES_SCAN_DIRECTORY_EXCLUSIONS:-#recycle,@eaDir}
+    ports:
+      - "25601:25600"
+    volumes:
+      # Komga-kobo configuration and database
+      - ${APPDATA_PATH}/komga-kobo:/config:z
+      # Media libraries (read-only from NFS)
+      - /mnt/nas-media/ebooks:/books:ro
+      - /mnt/nas-media/ebooks/calibre library/calibre:/news:ro
+    networks:
+      - media
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:25600/api/v1/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
 # Networks are not needed for host network mode
 # But we can define them for future services if needed
 networks:
