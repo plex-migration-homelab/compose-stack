@@ -9,8 +9,8 @@ services:
     environment:
       - TZ=${TZ:-America/New_York}
     ports:
-      - "80:1880"     # HTTP
-      - "443:18443"   # HTTPS
+      - "1880:80"     # HTTP
+      - "18443:443"   # HTTPS
       - "81:81"     # Admin Web Interface
     volumes:
       - ${APPDATA_PATH}/nginxproxymanager/data:/data:z
