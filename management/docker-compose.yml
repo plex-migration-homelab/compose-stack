@@ -27,6 +27,8 @@ services:
     container_name: watchtower
     restart: unless-stopped
     user: "root"
+    security_opt:
+      - no-new-privileges:true
     environment:
       - TZ=${TZ:-America/New_York}
       - WATCHTOWER_CLEANUP=true
