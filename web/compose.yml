@@ -54,7 +54,7 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
- networks:
+networks:
   web:
     name: web
     driver: bridge
