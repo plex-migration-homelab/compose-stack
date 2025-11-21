@@ -66,7 +66,7 @@ services:
       - "25600:25600"
     volumes:
       # Komga configuration and database
-      - ${APPDATA_PATH}/komga:/config:z
+      - ${APPDATA_PATH}/komga/config:/config:z
       # Media libraries (read-only from NFS)
       - /mnt/nas-media/ebooks:/books:ro
       - /mnt/nas-media/manga:/manga:ro
@@ -92,7 +92,7 @@ services:
       - "25601:25600"
     volumes:
       # Komga-kobo configuration and database
-      - ${APPDATA_PATH}/komga-kobo:/config:z
+      - ${APPDATA_PATH}/komga-kobo/config:/config:z
       # Media libraries (read-only from NFS)
       - /mnt/nas-media/ebooks:/books:ro
       - /mnt/nas-media/ebooks/calibre library/calibre:/news:ro
