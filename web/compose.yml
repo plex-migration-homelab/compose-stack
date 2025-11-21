@@ -54,6 +54,33 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
+  cloudflareddns:
+    image: ghcr.io/hotio/cloudflareddns:latest
+    container_name: cloudflareddns
+    restart: always
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK=002
+      - TZ=${TZ:-America/Chicago}
+      - INTERVAL=300
+      - DETECTION_MODE=dig-whoami.cloudflare
+      - LOG_LEVEL=3
+      - CF_USER=${CF_USER:-justincaveda11031@gmail.com}
+      - CF_APITOKEN=${CF_APITOKEN}
+      - CF_APIKEY=${CF_APIKEY:-}
+      - CF_APITOKEN_ZONE=${CF_APITOKEN_ZONE:-}
+      - CF_ZONES=nyquil-babies.com
+      - CF_HOSTS=dns.nyquil-babies.com;plex.nyquil-babies.com;jellyfin.nyquil-babies.com;watch.nyquil-babies.com
+      - CF_RECORDTYPES=A
+      - VPN_ENABLED=false
+      - PRIVOXY_ENABLED=false
+      - UNBOUND_ENABLED=false
+    networks:
+      - web
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
 networks:
   web:
     name: web
