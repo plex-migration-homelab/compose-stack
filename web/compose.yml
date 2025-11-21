@@ -2,7 +2,7 @@
 # These services are accessed via VPS reverse proxy (WireGuard tunnel)
 
 services:
- nginxproxymanager:
+  nginxproxymanager:
     image: lscr.io/linuxserver/nginx-proxy-manager:latest
     container_name: nginxproxymanager
     restart: unless-stopped
