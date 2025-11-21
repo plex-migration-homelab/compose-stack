@@ -1,0 +1,28 @@
+# Portainer Stack - Container Management Platform
+# Runs independently via systemd and manages all other stacks via Portainer UI
+# This separation prevents circular dependencies when Portainer manages other stacks
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    user: "0:0"
+    security_opt:
+      - no-new-privileges:true
+      - label=disable
+    environment:
+      - TZ=${TZ:-America/New_York}
+    ports:
+      - "9000:9000"    # Web UI
+      - "9443:9443"    # HTTPS Web UI
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:z
+      - ${APPDATA_PATH}/portainer:/data:z
+    networks:
+      - portainer
+
+networks:
+  portainer:
+    name: portainer
+    driver: bridge
