@@ -68,6 +68,40 @@ volumes:
   - /etc/localtime:/etc/localtime:z
 ```
 
+### Rule 2a: Docker Socket Access Requires Special SELinux Context
+
+**WHEN** a container needs to **write** to the Docker socket (Portainer, Watchtower, etc.):
+**THEN** you MUST use `security_opt: - label=type:container_runtime_t`
+
+```yaml
+# ✅ CORRECT - Container can manage Docker socket
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    user: "0:0"                              # Numeric UID:GID (avoids /etc/passwd lookups)
+    security_opt:
+      - no-new-privileges:true
+      - label=type:container_runtime_t       # Grants Docker socket access via SELinux
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:z  # Use :z with container_runtime_t
+      - ${APPDATA_PATH}/portainer:/data:z
+
+# ❌ WRONG - Contradictory SELinux configuration
+services:
+  portainer:
+    security_opt:
+      - label=disable                        # Disables ALL SELinux labeling
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:z  # :z has no effect with label=disable
+```
+
+**WHY:** The `container_runtime_t` SELinux type gives the container the appropriate security context to interact with the Docker socket while maintaining SELinux enforcement. Using `label=disable` with `:z` flags creates a contradiction where SELinux labeling is disabled but you're trying to apply labels.
+
+**Alternative approaches (in order of preference):**
+1. **Use `label=type:container_runtime_t`** (RECOMMENDED) - Maintains SELinux enforcement with proper context
+2. **Enable SELinux boolean** - `setsebool -P container_manage_cgroup on` (system-wide change)
+3. **Use `label=disable`** - Only if absolutely necessary, and remove all `:z` flags (least secure)
+
 ### Rule 3: Named Volumes Need NO Tags
 
 **WHEN** you use Docker-managed named volumes:
@@ -86,16 +120,17 @@ volumes:
 
 ### SELinux Quick Decision Table
 
-| What You're Mounting | Tag Required | Example |
-|---------------------|-------------|---------|
-| App config directory | `:z` | `${APPDATA_PATH}/service:/config:z` |
-| Database directory | `:z` | `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z` |
-| Upload directory | `:z` | `${UPLOAD_LOCATION}:/uploads:z` |
-| Cache directory (writable) | `:z` | `${APPDATA_PATH}/service/cache:/cache:z` |
-| Docker socket | `:ro` ONLY | `/var/run/docker.sock:/var/run/docker.sock:ro` |
-| System time files | `:ro` ONLY | `/etc/localtime:/etc/localtime:ro` |
-| NFS read-only media | `:ro` ONLY | `/mnt/nas-media:/media:ro` |
-| Named Docker volume | NONE | `volume_name:/path` |
+| What You're Mounting | Tag Required | Security Context | Example |
+|---------------------|-------------|-----------------|---------|
+| App config directory | `:z` | N/A | `${APPDATA_PATH}/service:/config:z` |
+| Database directory | `:z` | N/A | `${DB_DATA_LOCATION}:/var/lib/postgresql/data:z` |
+| Upload directory | `:z` | N/A | `${UPLOAD_LOCATION}:/uploads:z` |
+| Cache directory (writable) | `:z` | N/A | `${APPDATA_PATH}/service/cache:/cache:z` |
+| Docker socket (read-only) | `:ro` ONLY | N/A | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| Docker socket (write) | `:z` | `label=type:container_runtime_t` | See Rule 2a |
+| System time files | `:ro` ONLY | N/A | `/etc/localtime:/etc/localtime:ro` |
+| NFS read-only media | `:ro` ONLY | N/A | `/mnt/nas-media:/media:ro` |
+| Named Docker volume | NONE | N/A | `volume_name:/path` |
 
 ---
 
@@ -108,10 +143,17 @@ volumes:
 **Services:** Portainer (9000, 9443), Watchtower (auto-updates), Tautulli (8181)
 
 **WHEN** modifying this stack:
-- Portainer and Watchtower MUST have Docker socket access: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Portainer and Watchtower need Docker socket **write** access
+- MUST use `user: "0:0"` (numeric UID:GID)
+- MUST use `security_opt: - label=type:container_runtime_t` for SELinux context
+- Docker socket MUST use `:z`: `/var/run/docker.sock:/var/run/docker.sock:z`
 - All appdata mounts MUST use `:z`: `${APPDATA_PATH}/portainer:/data:z`
 - Watchtower MUST have `WATCHTOWER_LABEL_ENABLE=true` environment variable
 - All services MUST include label: `com.centurylinklabs.watchtower.enable=true`
+
+**NEVER:**
+- Use `label=disable` with `:z` volume flags (contradictory configuration)
+- Use `:ro` on Docker socket for Portainer/Watchtower (they need write access)
 
 ### Media Stack (`media/compose.yml`)
 
@@ -137,7 +179,8 @@ volumes:
 **WHEN** modifying this stack:
 - All services MUST be on `web` bridge network
 - All appdata MUST use `:z`: `${APPDATA_PATH}/service:/config:z`
-- Homepage MUST have Docker socket: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Homepage needs Docker socket **read-only** access: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- If Homepage has socket permission issues, use `security_opt: - label=type:container_runtime_t`
 - Services are accessed via WireGuard tunnel from VPS
 
 ### Nextcloud AIO Stack (`cloud/nextcloud/compose.yml`)
@@ -148,7 +191,8 @@ volumes:
 - There is ONLY ONE container: `nextcloud-aio-mastercontainer`
 - Mastercontainer auto-creates sub-containers (`nextcloud-aio-*`) via Docker API
 - MUST have: `init: true`
-- MUST have Docker socket: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Needs Docker socket **write** access: `/var/run/docker.sock:/var/run/docker.sock:z`
+- MUST use `security_opt: - label=type:container_runtime_t` for SELinux context
 - MUST use named volume: `nextcloud_aio_mastercontainer:/mnt/docker-aio-config` (no tags)
 - Port 8080 is the AIO admin interface
 
@@ -344,43 +388,49 @@ services:
    - Containers will fail with permission denied
    - SELinux will block all write operations
 
-2. **Add `:z` to Docker socket**
-   - Will cause permission issues
-   - Always use `:ro` only
+2. **Combine `label=disable` with `:z` volume flags**
+   - Creates contradictory SELinux configuration
+   - The `:z` flags become ineffective when SELinux labeling is disabled
+   - Use `label=type:container_runtime_t` instead for Docker socket access
 
-3. **Add `:z` to named volumes**
+3. **Use `:ro` on Docker socket for containers that need write access**
+   - Portainer, Watchtower, Nextcloud AIO need write access
+   - They MUST use `:z` with `label=type:container_runtime_t` security context
+   - Homepage only needs `:ro` (read-only access)
+
+4. **Add `:z` to named volumes**
    - Docker manages these automatically
    - Adding :z will cause errors
 
-4. **Change Plex to bridge network**
+5. **Change Plex to bridge network**
    - Breaks device discovery
    - Breaks remote access
    - Breaks DLNA
 
-5. **Add ML container to mini PC Immich stack**
+6. **Add ML container to mini PC Immich stack**
    - Mini PC has no GPU
    - Would be CPU-only (very slow)
    - Breaks documented architecture
 
-6. **Modify Nextcloud sub-containers directly**
+7. **Modify Nextcloud sub-containers directly**
    - AIO will override changes
    - May break entire AIO system
 
-7. **Modify systemd units without testing**
+8. **Modify systemd units without testing**
    - System is remote - cannot physically recover
    - Could lose access entirely
 
-8. **Change network configuration**
+9. **Change network configuration**
    - WireGuard tunnel is critical for access
    - Tailscale is backup access
    - Loss of both = system unreachable
 
-9. **Hardcode secrets in compose files**
-   - Security risk
-   - Git history exposure
-   - Always use ${VAR} from .env
+10. **Hardcode secrets in compose files**
+    - Security risk
+    - Git history exposure
+    - Always use ${VAR} from .env
 
-10. **Use `apt`, `dnf`, or `yum`**
+11. **Use `apt`, `dnf`, or `yum`**
     - Fedora CoreOS is immutable
     - Use rpm-ostree for system packages (requires reboot)
     - Prefer containerized solutions
@@ -429,7 +479,9 @@ Before suggesting ANY changes to compose files, verify:
 
 **SELinux Compliance:**
 - [ ] All writable bind mounts have `:z`
-- [ ] Docker socket has `:ro` only (no `:z`)
+- [ ] Docker socket (read-only) has `:ro` only (no `:z`)
+- [ ] Docker socket (write) has `:z` AND `label=type:container_runtime_t`
+- [ ] NEVER combine `label=disable` with `:z` flags (contradictory)
 - [ ] System files have `:ro` only (no `:z`)
 - [ ] NFS mounts have `:ro` only (no `:z`)
 - [ ] Named volumes have no tags
