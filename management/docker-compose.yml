@@ -6,9 +6,10 @@ services:
     image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
-    user: "root"
+    user: "0:0"
     security_opt:
       - no-new-privileges:true
+      - label=disable
     environment:
       - TZ=${TZ:-America/New_York}
     ports:
@@ -26,9 +27,10 @@ services:
     image: containrrr/watchtower:latest
     container_name: watchtower
     restart: unless-stopped
-    user: "root"
+    user: "0:0"
     security_opt:
       - no-new-privileges:true
+      - label=disable
     environment:
       - TZ=${TZ:-America/New_York}
       - WATCHTOWER_CLEANUP=true
