@@ -7,19 +7,16 @@ services:
     volumes:
       - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # MAPPING ADDED HERE:
+      - /mnt/nas-temp-backup:/mnt/backup_restore_source
     environment:
-      # Interface Binding
       - APACHE_PORT=11000
       - APACHE_IP_BINDING=0.0.0.0
-      # Migration Logic
       - SKIP_DOMAIN_VALIDATION=true
-      # Storage Mapping
       - NEXTCLOUD_DATADIR=/mnt/nas-nextcloud
     ports:
       - 8080:8080
-    # Explicitly defined as requested (though it is the default)
     network_mode: bridge
-    # CoreOS Requirements
     security_opt:
       - label=disable
     user: "0:0"
