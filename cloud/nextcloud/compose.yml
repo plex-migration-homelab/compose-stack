@@ -24,8 +24,12 @@ services:
     ports:
       - 8080:8080
     
-    # Network Mode: Explicitly Bridge
-    network_mode: bridge
+    # Network Mode: Explicitly Bridge (Must be commented out when using 'networks')
+    # network_mode: bridge
+
+    # Service-level network assignment
+    networks:
+      - nextcloud-aio   
     
     # CoreOS Constraint: Disable SELinux isolation for Socket access
     security_opt:
@@ -33,10 +37,18 @@ services:
     
     # CoreOS Constraint: Run as root for Socket access
     user: "0:0"
-# FORCE DNS TO BYPASS CLOUDFLARE
+
+    # FORCE DNS TO BYPASS CLOUDFLARE
     extra_hosts:
       - "nextcloud.nyquil-babies.com:10.253.1.3"
-    
+
+# Global network definition
+networks:
+  nextcloud-aio:
+    name: nextcloud-aio
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1350"    
 
 volumes:
   nextcloud_aio_mastercontainer:
