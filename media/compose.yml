@@ -73,7 +73,7 @@ services:
     networks:
       - media
     healthcheck:
-      disable: true
+      disable: false
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
