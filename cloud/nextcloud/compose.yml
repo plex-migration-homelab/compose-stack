@@ -35,7 +35,7 @@ services:
     
     # SRE FIX: Forces container to route domain traffic to VPS VPN IP (Fixes Loopback/520 Errors)
     extra_hosts:
-      - "nextcloud.nyquil-babies.com:10.253.1.3"
+      - "nextcloud.nyquil-babies.com:127.0.0.1"
 
 volumes:
   nextcloud_aio_mastercontainer:
