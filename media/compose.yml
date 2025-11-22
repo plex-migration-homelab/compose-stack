@@ -73,7 +73,12 @@ services:
     networks:
       - media
     healthcheck:
-      disable: false
+      test: ["CMD", "curl", "-f", "http://localhost:25600/api/v1/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
