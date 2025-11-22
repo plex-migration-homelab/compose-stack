@@ -19,6 +19,7 @@ services:
       
       # Storage: Force data to Unraid NFS Share (Persistent)
       - NEXTCLOUD_DATADIR=/mnt/nas-nextcloud
+      - NEXTCLOUD_TRUSTED_PROXIES=10.253.1.3/24
     ports:
       - 8080:8080
     
