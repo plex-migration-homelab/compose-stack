@@ -7,19 +7,34 @@ services:
     volumes:
       - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # MAPPING ADDED HERE:
+      # USER CONFIG: Local backup path with SELinux relabeling
       - /etc/share/backups/nextcloud:/mnt/backup:z
     environment:
+      # Network: Bind to all interfaces (Required for WireGuard visibility)
       - APACHE_PORT=11000
       - APACHE_IP_BINDING=0.0.0.0
+      
+      # Validation: Bypass domain checks during setup
       - SKIP_DOMAIN_VALIDATION=true
+      
+      # Storage: Force data to Unraid NFS Share (Persistent)
       - NEXTCLOUD_DATADIR=/mnt/nas-nextcloud
     ports:
       - 8080:8080
+    
+    # Network Mode: Explicitly Bridge
     network_mode: bridge
+    
+    # CoreOS Constraint: Disable SELinux isolation for Socket access
     security_opt:
       - label=disable
+    
+    # CoreOS Constraint: Run as root for Socket access
     user: "0:0"
+    
+    # SRE FIX: Forces container to route domain traffic to VPS VPN IP (Fixes Loopback/520 Errors)
+    extra_hosts:
+      - "nextcloud.nyquil-babies.com:10.253.1.3"
 
 volumes:
   nextcloud_aio_mastercontainer:
